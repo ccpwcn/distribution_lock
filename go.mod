@@ -1,4 +1,4 @@
-module distribution_lock
+module github.com/ccpwcn/distribution_lock
 
 go 1.18
 
