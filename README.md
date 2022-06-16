@@ -6,6 +6,13 @@ etcd是新一代的服务发现与配置中心，官网 https://etcd.io/ ，同�
 # 开发
 这个分布式锁组件依赖于`go.etcd.io/etcd/client/v3`。
 
+你使用时，只需要在你的工程是使用下列命令即可：
+```shell
+go get github.com/ccpwcn/distribution_lock
+```
+
+代码调用方法请参见测试用例。
+
 # 实现原理
 它的实现原理和基于zookeeper的实现原理本质上是一样的：
 - 在分布式多进程环境下，锁不能设在进程中，因为两个服务是两个进程，甚至在两台计算机上
