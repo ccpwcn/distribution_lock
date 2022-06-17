@@ -96,7 +96,9 @@ func New(etcdEndpoints []string, option Option) (locker *DistributionLocker, err
 }
 
 func (locker *DistributionLocker) timeoutCancel() {
-
+	if locker.option.Debug {
+		log.Printf("进程 %+v 的锁操作撤销", os.Getpid())
+	}
 }
 
 // GetId 获得当前锁的内部ID
@@ -104,7 +106,7 @@ func (locker *DistributionLocker) GetId() int64 {
 	return int64(locker.leaseId)
 }
 
-func (locker *DistributionLocker) Acquire(lockerId string) (who string, ok bool) {
+func (locker *DistributionLocker) Acquire(lockerId string) (who int64, ok bool) {
 	var err error
 	// 在租约时间内去抢锁（etcd 里面的锁就是一个 key）
 	kv := clientV3.NewKV(locker.client)
@@ -118,13 +120,13 @@ func (locker *DistributionLocker) Acquire(lockerId string) (who string, ok bool)
 		Then(clientV3.OpPut(lockerKey, lockerId, clientV3.WithLease(locker.leaseId))).
 		Else(clientV3.OpGet(lockerKey))
 	if locker.txnResp, err = txn.Commit(); err != nil {
-		return "", false
+		return 0, false
 	}
 
 	if !locker.txnResp.Succeeded {
-		return string(locker.txnResp.Responses[0].GetResponseRange().Kvs[0].Value), false
+		return locker.txnResp.Responses[0].GetResponseRange().Kvs[0].Lease, false
 	}
-	return "", true
+	return 0, true
 }
 
 func (locker *DistributionLocker) Release() error {
