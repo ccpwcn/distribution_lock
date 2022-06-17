@@ -15,7 +15,6 @@ type DistributionLocker struct {
 	leaseGrantResp *clientV3.LeaseGrantResponse
 	leaseId        clientV3.LeaseID
 	keepRespChan   <-chan *clientV3.LeaseKeepAliveResponse
-	keepResp       *clientV3.LeaseKeepAliveResponse
 	txnResp        *clientV3.TxnResponse
 	ctx            context.Context
 	cancelFunc     context.CancelFunc
@@ -24,7 +23,10 @@ type DistributionLocker struct {
 
 type Option struct {
 	ConnectionTimeout time.Duration // 连接到etcd的超时时间，示例：5*time.Second
+	LeaseTtl          int64         // 租约时长，连接异常断开后，未续租的租约会在这个时间之后失效
 	Prefix            string        // 锁前缀
+	Username          string        // 用户名，可选
+	Password          string        // 密码，可选
 	Debug             bool
 }
 
@@ -33,24 +35,36 @@ type Option struct {
 //  connectionTimeout 连接到etcd的超时时间，示例：5*time.Second
 func New(etcdEndpoints []string, option Option) (locker *DistributionLocker, err error) {
 	if option.Prefix == "" {
-		option.Prefix = "lock:"
+		option.Prefix = "distribution_lock:"
 	}
 	if option.ConnectionTimeout <= 0 {
 		option.ConnectionTimeout = 5 * time.Second
 	}
-	locker = &DistributionLocker{config: clientV3.Config{
-		Endpoints:   etcdEndpoints,
-		DialTimeout: option.ConnectionTimeout},
+	if option.LeaseTtl <= 0 {
+		option.LeaseTtl = 5
+	}
+	locker = &DistributionLocker{
+		config: clientV3.Config{
+			Endpoints:   etcdEndpoints,
+			DialTimeout: option.ConnectionTimeout,
+			Username:    option.Username,
+			Password:    option.Password,
+		},
 		option: option,
 	}
 	if locker.client, err = clientV3.New(locker.config); err != nil {
 		return nil, err
 	}
-
+	var timeoutCtx, cancel = context.Background(), locker.timeoutCancel
+	timeoutCtx, cancel = context.WithTimeout(context.Background(), option.ConnectionTimeout)
+	defer cancel()
+	if _, err := locker.client.Status(timeoutCtx, etcdEndpoints[0]); err != nil {
+		return nil, err
+	}
 	//上锁并创建租约
 	locker.lease = clientV3.NewLease(locker.client)
 	// 第2个参数TTL，可以用于控制如果当前进程和etcd连接断开了，持有锁的上下文多长时间失效
-	if locker.leaseGrantResp, err = locker.lease.Grant(context.TODO(), 3); err != nil {
+	if locker.leaseGrantResp, err = locker.lease.Grant(context.TODO(), option.LeaseTtl); err != nil {
 		return nil, err
 	}
 	locker.leaseId = locker.leaseGrantResp.ID
@@ -64,21 +78,25 @@ func New(etcdEndpoints []string, option Option) (locker *DistributionLocker, err
 	go func() {
 		for {
 			select {
-			case locker.keepResp = <-locker.keepRespChan:
-				if locker.keepRespChan == nil || locker.keepResp == nil {
+			case keepResp := <-locker.keepRespChan:
+				if keepResp == nil {
 					if locker.option.Debug {
 						log.Printf("进程 %+v 的锁 %+v 的租约已经失效了", os.Getpid(), locker.leaseId)
 					}
 					return
 				} else { // 每秒会续租一次, 所以就会收到一次应答
 					if locker.option.Debug {
-						log.Printf("进程 %+v 收到自动续租应答 %+v", os.Getpid(), locker.keepResp.ID)
+						log.Printf("进程 %+v 收到自动续租应答 %+v", os.Getpid(), keepResp.ID)
 					}
 				}
 			}
 		}
 	}()
 	return locker, nil
+}
+
+func (locker *DistributionLocker) timeoutCancel() {
+
 }
 
 // GetId 获得当前锁的内部ID
