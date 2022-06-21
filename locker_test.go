@@ -149,7 +149,7 @@ func TestDistributionLocker_GetId(t *testing.T) {
 	} else if who, ok := locker.Acquire("DistributionLocker_GetId"); ok {
 		// 抢到锁后执行业务逻辑，没有抢到则退出
 		t.Logf("进程 %+v 持有锁 %+v 正在处理任务中...", os.Getpid(), locker.GetId())
-		time.Sleep(5 * time.Second) // 这是正在做的事情，假定耗时5秒
+		time.Sleep(3 * time.Second) // 这是正在做的事情，假定耗时3秒
 		t.Logf("进程 %+v 的任务处理完了", os.Getpid())
 		// 手动释放锁，在后台应用服务中，也可以通过defer释放
 		if err := locker.Release(); err != nil {
