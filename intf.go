@@ -3,6 +3,8 @@ package distribution_lock
 import "context"
 
 type GenerateDistributionLocker interface {
+	// GetId 获得锁的身份标识符
+	// 只有持有锁的时候调用此方法才有意义
 	GetId() int64
 	// Acquire 获得锁
 	// lockerId 锁ID，推荐使用UUID或雪花算法，确保唯一性，防止复杂业务+大量数据的情况下发生锁冲撞
